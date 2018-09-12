@@ -101,9 +101,9 @@ def train():
         x, image_ids, image_heights, image_widths = reader.feed()
 
         starter_gaussian_sigma = FLAGS.gaussian_sigma
-        end_gaussian_sigma = 0.5
+        end_gaussian_sigma = 0.6
         start_decay_step = 50000
-        decay_steps = 100000
+        decay_steps = 90000
         gaussian_sigma = tf.where(
             tf.greater_equal(global_step, start_decay_step),
             tf.train.polynomial_decay(starter_gaussian_sigma,
