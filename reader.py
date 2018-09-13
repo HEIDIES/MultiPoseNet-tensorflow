@@ -54,7 +54,7 @@ class Reader:
 
 def test_reader():
     train_file_1 = 'data/tfrecords/train.tfrecords'
-    label_ = json_convert.load_label('data/label/keypoint_train_annotations_20170909.json')
+    label_ = json_convert.load_label('data/label/keypoint_validation_annotations_20170911.json')
 
     with tf.Graph().as_default():
         reader1 = Reader(train_file_1, batch_size=1)

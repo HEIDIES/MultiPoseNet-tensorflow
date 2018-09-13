@@ -361,3 +361,4 @@ def retina3(ipt1, ipt2, name='retina3', reuse=False, is_training=True,
         upsample = tf.image.resize_images(ipt2, [shape[1] * 2, shape[2] * 2],
                                           method=resize_method)
         return tf.add(c1s1k256, upsample)
+

@@ -50,7 +50,7 @@ def get_heatmap(image_ids, image_heights, image_widths, labels):
 
 
 if __name__ == '__main__':
-    label_ = load_label('data/label/keypoint_train_annotations_20170909.json')
+    label_ = load_label('data/label/keypoint_validation_annotations_20170911.json')
     input_dir = 'data/train'
     i_ = 0
     imgs = []
