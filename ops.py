@@ -146,7 +146,8 @@ def fully_connected(x, output_dims, use_bias=True, is_training=True, reuse=False
 
 def conv2d(x, filters, ksize, pad_size=0, stride=1, pad_mode='CONSTANT', padding='VALID',
            norm=None, activation=None, name='conv2d', reuse=False, is_training=True,
-           kernel_initializer='he_uniform', use_bias=False, upsampling=None, act_first=False):
+           kernel_initializer='he_uniform', use_bias=False, upsampling=None, act_first=False,
+           weights_std=0.001, bias_init=0.0):
     """
     :param x: 4D tensor, [batch_size, height, width, channels]
     :param filters: int, number of output channels
@@ -163,13 +164,17 @@ def conv2d(x, filters, ksize, pad_size=0, stride=1, pad_mode='CONSTANT', padding
     :param kernel_initializer:  string, determine what kind of initializer methods of weights will be used.
     :param use_bias: bool, use bias or not
     :param upsampling: list, copy the input upsampling[0] times by row, and upsampling[1] times by column.
+    :param act_first: bool, activate before or after BN
+    :param weights_std: float, initial std of weights
+    :param bias_init: float, initial value of bias
     :return: 4D tensor, output of convolution layer
     """
     with tf.variable_scope(name, reuse=reuse):
         if upsampling is not None:
             x = tf.tile(x, multiples=[1, upsampling[0], upsampling[1], 1])
         input_shape = x.get_shape()[3]
-        weights = _weights('weights', shape=[ksize, ksize, input_shape, filters], initializer=kernel_initializer)
+        weights = _weights('weights', shape=[ksize, ksize, input_shape, filters], initializer=kernel_initializer,
+                           stddev=weights_std)
         if pad_size > 0:
             x = tf.pad(x, [[0, 0], [pad_size, pad_size], [pad_size, pad_size], [0, 0]], mode=pad_mode)
         x = tf.nn.conv2d(
@@ -178,7 +183,7 @@ def conv2d(x, filters, ksize, pad_size=0, stride=1, pad_mode='CONSTANT', padding
             name=name
         )
         if use_bias:
-            bias = _bias('bias', [filters])
+            bias = _bias('bias', [filters], constant=bias_init)
             x = tf.add(x, bias)
         if act_first:
             if activation is not None:
