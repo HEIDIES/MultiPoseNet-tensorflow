@@ -30,6 +30,7 @@ tf.flags.DEFINE_float('gaussian_sigma', 1.5, 'the variation of gaussian kernel, 
 tf.flags.DEFINE_string('pretrained_model_checkpoints', 'pretrained_model/resnet_v2_50.ckpt',
                        'pretrained resnet_v2_50 model file, default: pretrained_model/resnet_v2_50.ckpt')
 train_mode = False
+train_which = 'retina_subnet'
 
 
 def get_heatmap(image_ids, image_heights, image_widths, labels, gaussian_sigma):
@@ -67,7 +68,7 @@ def get_heatmap(image_ids, image_heights, image_widths, labels, gaussian_sigma):
     return heatmap
 
 
-def train():
+def train_keypoint_subnet():
     if FLAGS.load_model is not None:
         checkpoints_dir = "checkpoints/" + FLAGS.load_model.lstrip("checkpoints/")
     else:
@@ -204,7 +205,10 @@ def train():
 
 
 def main(unused_argv):
-    train()
+    if train_which == 'keypoint_subnet':
+        train_keypoint_subnet()
+    # elif train_which == 'retina_subnet':
+        # train_
 
 
 if __name__ == '__main__':
