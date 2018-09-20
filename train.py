@@ -1,76 +1,23 @@
 import tensorflow as tf
-from model import KEYPOINTSUBNET
+from model import KEYPOINTSUBNET, DETECTERSUBNET
 from reader import Reader
 from datetime import datetime
 import os
 import logging
 import json_convert
 import numpy as np
-import math
+import labels_generator
+import hyper_parameters
+import anchors_generator
 # from tensorflow.contrib.slim import nets
 
-FLAGS = tf.flags.FLAGS
-tf.flags.DEFINE_integer('batch_size', 8, 'batch size, default: 1')
-tf.flags.DEFINE_integer('image_size', 224, 'image size, default: 256')
-tf.flags.DEFINE_float('learning_rate', 1e-4,
-                      'initial learning rate for Adam, default: 0.0002')
-tf.flags.DEFINE_integer('num_id2', 2, 'number of res_block_id2')
-tf.flags.DEFINE_integer('num_id3', 3, 'number of res_block_id3')
-tf.flags.DEFINE_integer('num_id4', 5, 'number of res_block_id4')
-tf.flags.DEFINE_integer('num_id5', 2, 'number of res_block_id5')
-tf.flags.DEFINE_bool('use_depth_to_space', True, 'using depth to space method or not')
-tf.flags.DEFINE_integer('heatmap_channels', 14, 'the number of channels of heatmap')
-tf.flags.DEFINE_string('X', 'data/tfrecords/train.tfrecords',
-                       'X tfrecords file for training, default: data/tfrecords/image.tfrecords')
-tf.flags.DEFINE_string('labels_file', 'data/label/keypoint_train_annotations_20170909.json',
-                       'labels file for training, default: data/label/keypoint_validation_annotations_20170911.json')
-tf.flags.DEFINE_string('load_model', '20180825-1954',
-                       'folder of saved model that you wish to continue training (e.g. 20170602-1936), default: None')
-tf.flags.DEFINE_float('gaussian_sigma', 1.5, 'the variation of gaussian kernel, default: 1.0')
-tf.flags.DEFINE_string('pretrained_model_checkpoints', 'pretrained_model/resnet_v2_50.ckpt',
-                       'pretrained resnet_v2_50 model file, default: pretrained_model/resnet_v2_50.ckpt')
 train_mode = False
 train_which = 'retina_subnet'
 
 
-def get_heatmap(image_ids, image_heights, image_widths, labels, gaussian_sigma):
-    heatmap = np.zeros(shape=[FLAGS.batch_size, FLAGS.image_size // 4, FLAGS.image_size // 4,
-                              FLAGS.heatmap_channels], dtype=np.float32)
-    for i in range(len(image_ids)):
-        label = labels[image_ids[i].decode('utf-8')]
-        origin_height = image_heights[i]
-        origin_width = image_widths[i]
-        for key in label[1]:
-            for j in range(len(label[1][key]) // 3):
-                width = FLAGS.image_size // 4
-                height = FLAGS.image_size // 4
-                center_x = int(label[1][key][3 * j] * width / float(origin_height))
-                center_y = int(label[1][key][3 * j + 1] * height / float(origin_width))
-                point_status = label[1][key][3 * j + 2]
-                if point_status != 3:
-                    th = 1.6052
-                    delta = math.sqrt(th * 2)
-
-                    x0 = int(max(0, center_x - delta * gaussian_sigma))
-                    y0 = int(max(0, center_y - delta * gaussian_sigma))
-
-                    x1 = int(min(width, center_x + delta * gaussian_sigma))
-                    y1 = int(min(height, center_y + delta * gaussian_sigma))
-
-                    for y in range(y0, y1):
-                        for x in range(x0, x1):
-                            d = (x - center_x) ** 2 + (y - center_y) ** 2
-                            exp = d / 2.0 / gaussian_sigma / gaussian_sigma
-                            if exp > th:
-                                continue
-                            heatmap[i][y][x][j] = max(heatmap[i][y][x][j], math.exp(-exp))
-                            heatmap[i][y][x][j] = min(heatmap[i][y][x][j], 1.0)
-    return heatmap
-
-
 def train_keypoint_subnet():
-    if FLAGS.load_model is not None:
-        checkpoints_dir = "checkpoints/" + FLAGS.load_model.lstrip("checkpoints/")
+    if hyper_parameters.FLAGS.load_model_keypoint is not None:
+        checkpoints_dir = "checkpoints/" + hyper_parameters.FLAGS.load_model_keypoint.lstrip("checkpoints/")
     else:
         current_time = datetime.now().strftime("%Y%m%d-%H%M")
         checkpoints_dir = "checkpoints/{}".format(current_time)
@@ -79,16 +26,17 @@ def train_keypoint_subnet():
         except os.error:
             pass
 
-    labels = json_convert.load_label(FLAGS.labels_file)
+    labels = json_convert.load_label(hyper_parameters.FLAGS.labels_file)
     tf.reset_default_graph()
     graph = tf.Graph()
     with graph.as_default():
-        keypoint_subnet = KEYPOINTSUBNET('keypoint_subnet', FLAGS.image_size,
-                                         FLAGS.num_id2, FLAGS.num_id3, FLAGS.num_id4,
-                                         FLAGS.num_id5, FLAGS.use_depth_to_space,
-                                         heat_map_channels=FLAGS.heatmap_channels,
-                                         learning_rate=FLAGS.learning_rate,
-                                         batch_size=FLAGS.batch_size)
+        keypoint_subnet = KEYPOINTSUBNET('keypoint_subnet', hyper_parameters.FLAGS.image_size,
+                                         hyper_parameters.FLAGS.num_id2, hyper_parameters.FLAGS.num_id3,
+                                         hyper_parameters.FLAGS.num_id4,
+                                         hyper_parameters.FLAGS.num_id5, hyper_parameters.FLAGS.use_depth_to_space,
+                                         heat_map_channels=hyper_parameters.FLAGS.heatmap_channels,
+                                         learning_rate=hyper_parameters.FLAGS.learning_rate,
+                                         batch_size=hyper_parameters.FLAGS.batch_size)
 
         res50_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='resnet_v2_50')
         saver_res50 = tf.train.Saver(res50_var_list)
@@ -98,10 +46,11 @@ def train_keypoint_subnet():
 
         saver = tf.train.Saver()
 
-        reader = Reader(FLAGS.X, batch_size=FLAGS.batch_size, image_size=FLAGS.image_size)
+        reader = Reader(hyper_parameters.FLAGS.X, batch_size=hyper_parameters.FLAGS.batch_size,
+                        image_size=hyper_parameters.FLAGS.image_size)
         x, image_ids, image_heights, image_widths = reader.feed()
 
-        starter_gaussian_sigma = FLAGS.gaussian_sigma
+        starter_gaussian_sigma = hyper_parameters.FLAGS.gaussian_sigma
         end_gaussian_sigma = 0.6
         start_decay_step = 50000
         decay_steps = 90000
@@ -125,7 +74,7 @@ def train_keypoint_subnet():
             train_writer = tf.summary.FileWriter(checkpoints_dir, graph)
 
         with tf.Session(graph=graph, config=config) as sess:
-            if FLAGS.load_model is not None:
+            if hyper_parameters.FLAGS.load_model_keypoint is not None:
                 checkpoint = tf.train.get_checkpoint_state(checkpoints_dir)
                 meta_graph_path = checkpoint.model_checkpoint_path + ".meta"
                 restore = tf.train.import_meta_graph(meta_graph_path)
@@ -133,7 +82,7 @@ def train_keypoint_subnet():
                 step = int(meta_graph_path.split("-")[2].split(".")[0])
             else:
                 sess.run(tf.global_variables_initializer())
-                saver_res50.restore(sess, FLAGS.pretrained_model_checkpoints)
+                saver_res50.restore(sess, hyper_parameters.FLAGS.pretrained_model_checkpoints)
                 step = 0
 
             coord = tf.train.Coordinator()
@@ -145,7 +94,7 @@ def train_keypoint_subnet():
                     images, img_ids, img_widths, img_heights, g_sigma = sess.run([x, image_ids,
                                                                                   image_heights, image_widths,
                                                                                   gaussian_sigma])
-                    heatmaps = get_heatmap(img_ids, img_heights, img_widths, labels, g_sigma)
+                    heatmaps = labels_generator.get_keypoint_heatmap(img_ids, img_heights, img_widths, labels, g_sigma)
                     _, keypoint_subnet_loss_val, summary = sess.run([optimizers, keypoint_subnet_loss, summary_op],
                                                                     feed_dict={keypoint_subnet.X: images,
                                                                                keypoint_subnet.Y: heatmaps})
@@ -202,6 +151,35 @@ def train_keypoint_subnet():
             finally:
                 coord.request_stop()
                 coord.join(threads)
+
+
+def train_retina_subnet():
+    if hyper_parameters.FLAGS.load_model_retina is not None:
+        checkpoints_dir = "checkpoints/" + hyper_parameters.FLAGS.load_model_retina.lstrip("checkpoints/")
+    else:
+        current_time = datetime.now().strftime("%Y%m%d-%H%M")
+        checkpoints_dir = "checkpoints/{}".format(current_time)
+        try:
+            os.makedirs(checkpoints_dir)
+        except os.error:
+            pass
+
+    labels = json_convert.load_label(hyper_parameters.FLAGS.labels_file)
+    anchors = anchors_generator.generate_anchors()
+    tf.reset_default_graph()
+    graph = tf.Graph()
+    with graph.as_default():
+        retina = DETECTERSUBNET('retina_subnet',
+                                hyper_parameters.FLAGS.image_size_retina,
+                                anchors,
+                                batch_size=hyper_parameters.FLAGS.batch_size,
+                                num_anchors=hyper_parameters.FLAGS.num_anchors,
+                                learning_rate=hyper_parameters.FLAGS.learning_rate_retina,
+                                gamma=hyper_parameters.FLAGS.gamma,
+                                alpha=hyper_parameters.FLAGS.alpha
+                                )
+        reg_loss, confs_loss = retina.model()
+        reg_optimizer, confs_optimizer = retina.retina_subnet_optimizer(reg_loss, confs_loss)
 
 
 def main(unused_argv):

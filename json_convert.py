@@ -76,4 +76,3 @@ if __name__ == '__main__':
     cv2.imshow('head heat map', np.reshape(heat_map[0][12][:][:], (64, 64, 1)))
     cv2.imshow('right ankle heat map', np.reshape(heat_map[0][0][:][:], (64, 64, 1)))
     cv2.waitKey(0)
-

@@ -156,15 +156,15 @@ class DETECTERSUBNET:
         self.is_training = tf.placeholder_with_default(True, [], name='is_training')
         self.X = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size, 3])
 
-        self.Y_3 = tf.placeholder(tf.float32, [self.batch_size, self.image_size / 16, self.image_size / 16,
+        self.Y_7 = tf.placeholder(tf.float32, [self.batch_size, self.image_size // 128, self.image_size // 128,
                                                self.num_anchors * 5])
-        self.Y_4 = tf.placeholder(tf.float32, [self.batch_size, self.image_size / 8, self.image_size / 8,
+        self.Y_6 = tf.placeholder(tf.float32, [self.batch_size, self.image_size // 64, self.image_size // 64,
                                                self.num_anchors * 5])
-        self.Y_5 = tf.placeholder(tf.float32, [self.batch_size, self.image_size / 4, self.image_size / 4,
+        self.Y_5 = tf.placeholder(tf.float32, [self.batch_size, self.image_size // 32, self.image_size // 32,
                                                self.num_anchors * 5])
-        self.Y_6 = tf.placeholder(tf.float32, [self.batch_size, self.image_size / 2, self.image_size / 2,
+        self.Y_4 = tf.placeholder(tf.float32, [self.batch_size, self.image_size // 16, self.image_size // 16,
                                                self.num_anchors * 5])
-        self.Y_7 = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size,
+        self.Y_3 = tf.placeholder(tf.float32, [self.batch_size, self.image_size // 8, self.image_size // 8,
                                                self.num_anchors * 5])
 
         arg_scope = nets.resnet_v2.resnet_arg_scope()
@@ -175,14 +175,26 @@ class DETECTERSUBNET:
         self.retina = RETINANETSUBNET('retinanet', is_training=self.is_training,
                                       num_anchors=self.num_anchors)
 
-    def compute_detector_subnet_regression_loss(self, bboxes_predictions, labels, output_size=(14, 14)):
+    def compute_detector_subnet_regression_loss(self, bboxes_predictions, labels, output_size=(32, 32), idx=1):
         w, h = output_size
-        b = len(self.anchors)
-        anchors = tf.constant(self.anchors, dtype=tf.float32)
+        b = len(self.anchors[idx])
+        anchors = tf.constant(self.anchors[idx], dtype=tf.float32)
         anchors = tf.reshape(anchors, [1, 1, b, 2])
+        labels = tf.reshape(labels, [-1, h * w, b, 5])
+        _coords = labels[:, :, :, 0: 4]
+        _confs = labels[:, :, :, 4]
 
-        _coords = labels["coords"]
-        _confs = labels["confs"]
+        c_x, c_y = list(range(w)), list(range(h))
+        bs = list(range(self.batch_size))
+        na = list(range(b))
+        c_x, c_y = tf.meshgrid(c_x, c_y)
+        c_x, _ = tf.meshgrid(c_x, bs)
+        c_x, _ = tf.meshgrid(c_x, na)
+        c_y, _ = tf.meshgrid(c_y, bs)
+        c_y, _ = tf.meshgrid(c_y, na)
+        c_x = tf.transpose(tf.reshape(c_x, [-1, na, w * h]), [0, 2, 1])
+        c_y = tf.transpose(tf.reshape(c_y, [-1, na, w * h]), [0, 2, 1])
+        center_grid = tf.stack([c_x, c_y], axis=3)
 
         _wh = tf.pow(_coords[:, :, :, 2: 4], 2) * np.reshape([w, h], [1, 1, 1, 2])
         _areas = _wh[:, :, :, 0] * _wh[:, :, :, 1]
@@ -197,9 +209,10 @@ class DETECTERSUBNET:
         coords = tf.concat([coords_xy, coords_wh], axis=3)
 
         # preds = tf.concat([coords, confs], axis=3)
+
         wh = tf.pow(coords[:, :, :, 2: 4], 2) * np.reshape([w, h], [1, 1, 1, 2])
         areas = wh[:, :, :, 0] * wh[:, :, :, 1]
-        centers = coords[:, :, :, 0: 2]
+        centers = coords[:, :, :, 0: 2] + center_grid
         up_left, down_right = centers - (wh * 0.5), centers + (wh * 0.5)
 
         inter_upleft = tf.maximum(up_left, _up_left)
@@ -210,16 +223,18 @@ class DETECTERSUBNET:
 
         best_iou_mask = tf.equal(ious, tf.reduce_max(ious, axis=2, keep_dims=True))
         best_iou_mask = tf.cast(best_iou_mask, tf.float32)
-        mask = best_iou_mask * _confs
+        mask = best_iou_mask * tf.squeeze(_confs, -1)
         mask = tf.expand_dims(mask, -1)
 
         coors_loss = tf.square(coords - _coords) * mask
         return coors_loss
 
-    def compute_detector_subnet_classification_loss(self, confs_predictions, labels, output_size=(14, 14)):
+    def compute_detector_subnet_classification_loss(self, confs_predictions, labels, output_size=(32, 32), idx=1):
         w, h = output_size
-        _confs = labels["confs"]
-        b = len(self.anchors)
+
+        b = len(self.anchors[idx])
+        labels = tf.reshape(labels, [-1, h * w, b, 5])
+        _confs = labels[:, :, :, 4]
 
         confs_predictions = tf.reshape(confs_predictions, [-1, h, w, b, 4])
         confs = tf.nn.sigmoid(confs_predictions)
@@ -236,30 +251,16 @@ class DETECTERSUBNET:
     def detector_subnet_loss(self, bboxes_predictions, confs_predictions):
         total_reg_loss = 0.0
         total_confs_loss = 0.0
-        label3 = {}
-        label4 = {}
-        label5 = {}
-        label6 = {}
-        label7 = {}
 
-        label3['coords'] = self.Y_3[:, :, :, 0: 4]
-        label4['coords'] = self.Y_4[:, :, :, 0: 4]
-        label5['coords'] = self.Y_5[:, :, :, 0: 4]
-        label6['coords'] = self.Y_6[:, :, :, 0: 4]
-        label7['coords'] = self.Y_7[:, :, :, 0: 4]
-        label3['confs'] = self.Y_3[:, :, :, 4]
-        label4['confs'] = self.Y_4[:, :, :, 4]
-        label5['confs'] = self.Y_5[:, :, :, 4]
-        label6['confs'] = self.Y_6[:, :, :, 4]
-        label7['confs'] = self.Y_7[:, :, :, 4]
-        labels = [label3, label4, label5, label6, label7]
+        labels = [self.Y_3, self.Y_4, self.Y_5, self.Y_6, self.Y_7]
 
-        for bbox, label, conf in bboxes_predictions, labels, confs_predictions:
+        for i, bbox in enumerate(bboxes_predictions):
             shape = bbox.get_shape().as_list()
+            label, conf = labels[i], confs_predictions[i]
             total_reg_loss += self.compute_detector_subnet_regression_loss(bbox, label,
-                                                                           output_size=(shape[1], shape[2]))
+                                                                           output_size=(shape[1], shape[2]), idx = i)
             total_confs_loss += self.compute_detector_subnet_classification_loss(conf, label,
-                                                                                 output_size=(shape[1], shape[2]))
+                                                                                 output_size=(shape[1], shape[2]), idx = i)
         return total_reg_loss, total_confs_loss
 
     def retina_subnet_optimizer(self, reg_loss, conf_loss):
