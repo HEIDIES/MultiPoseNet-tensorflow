@@ -31,3 +31,5 @@ tf.flags.DEFINE_float('learning_rate_retina', 0.01,
                       'initial learning rate for Adam, default: 0.01')
 tf.flags.DEFINE_float('gamma', 2.0, 'weights, default: 2.0')
 tf.flags.DEFINE_float('alpha', 0.25, 'weights, default: 0.25')
+tf.flags.DEFINE_string('pretrained_keypoint_model', 'pretrained_model/keypoint_dfeatrue_res50.ckpt',
+                       'pretrained model file, default: pretrained_model/keypoint_dfeatrue_res50.ckpt')

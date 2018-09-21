@@ -70,10 +70,8 @@ def get_detector_heatmap(image_ids, image_heights, image_widths, labels):
                 for j in range(hyper_parameters.FLAGS.num_anchors):
                     heatmap[i][int(y)][int(x)][j][0] = x
                     heatmap[i][int(y)][int(x)][j][1] = y
-                    heatmap[i][int(y)][int(x)][j][2] = math.sqrt(w_obj / (hyper_parameters.FLAGS.image_size //
-                                                                          (8 * math.pow(2, k))))
-                    heatmap[i][int(y)][int(x)][j][3] = math.sqrt(h_obj / (hyper_parameters.FLAGS.image_size //
-                                                                          (8 * math.pow(2, k))))
+                    heatmap[i][int(y)][int(x)][j][2] = math.sqrt(w_obj / hyper_parameters.FLAGS.image_size)
+                    heatmap[i][int(y)][int(x)][j][3] = math.sqrt(h_obj / hyper_parameters.FLAGS.image_size)
 
                 heatmaps.append(np.reshape(heatmap, [hyper_parameters.FLAGS.batch_size,
                                                      hyper_parameters.FLAGS.image_size // (8 * math.pow(2, k)),

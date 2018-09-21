@@ -258,9 +258,10 @@ class DETECTERSUBNET:
             shape = bbox.get_shape().as_list()
             label, conf = labels[i], confs_predictions[i]
             total_reg_loss += self.compute_detector_subnet_regression_loss(bbox, label,
-                                                                           output_size=(shape[1], shape[2]), idx = i)
+                                                                           output_size=(shape[1], shape[2]), idx=i)
             total_confs_loss += self.compute_detector_subnet_classification_loss(conf, label,
-                                                                                 output_size=(shape[1], shape[2]), idx = i)
+                                                                                 output_size=(shape[1], shape[2]),
+                                                                                 idx=i)
         return total_reg_loss, total_confs_loss
 
     def retina_subnet_optimizer(self, reg_loss, conf_loss):
@@ -315,3 +316,11 @@ class DETECTERSUBNET:
         reg_loss, confs_loss = self.detector_subnet_loss(bboxes_predictions, confs_predictions)
 
         return reg_loss, confs_loss
+
+    def out(self):
+        res_block_c3, res_block_c4, res_block_c5 = \
+            self.end_points['resnet_v2_50/block2/unit_3/bottleneck_v2'], \
+            self.end_points['resnet_v2_50/block3/unit_4/bottleneck_v2'], \
+            self.end_points['resnet_v2_50/block4']
+
+        return self.retina(res_block_c3, res_block_c4, res_block_c5)

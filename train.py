@@ -11,7 +11,7 @@ import hyper_parameters
 import anchors_generator
 # from tensorflow.contrib.slim import nets
 
-train_mode = False
+train_mode = True
 train_which = 'retina_subnet'
 
 
@@ -178,8 +178,85 @@ def train_retina_subnet():
                                 gamma=hyper_parameters.FLAGS.gamma,
                                 alpha=hyper_parameters.FLAGS.alpha
                                 )
+
+        res50_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='resnet_v2_50')
+        keypoint_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='keypointnet')
+        d_featrue_var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='d_featurenet')
+        saver_res50 = tf.train.Saver([res50_var_list, keypoint_var_list, d_featrue_var_list])
+
         reg_loss, confs_loss = retina.model()
+        keypoint_subnet_output = retina.out()
         reg_optimizer, confs_optimizer = retina.retina_subnet_optimizer(reg_loss, confs_loss)
+
+        saver = tf.train.Saver()
+
+        reader = Reader(hyper_parameters.FLAGS.X, batch_size=hyper_parameters.FLAGS.batch_size,
+                        image_size=hyper_parameters.FLAGS.image_size)
+        x, image_ids, image_heights, image_widths = reader.feed()
+
+        config = tf.ConfigProto(log_device_placement=True, allow_soft_placement=True)
+        config.gpu_options.allow_growth = True
+
+        if train_mode is True:
+            with graph.as_default():
+                summary_op = tf.summary.merge_all()
+                train_writer = tf.summary.FileWriter(checkpoints_dir, graph)
+
+            with tf.Session(graph=graph, config=config) as sess:
+                if hyper_parameters.FLAGS.load_model_retina is not None:
+                    checkpoint = tf.train.get_checkpoint_state(checkpoints_dir)
+                    meta_graph_path = checkpoint.model_checkpoint_path + ".meta"
+                    restore = tf.train.import_meta_graph(meta_graph_path)
+                    restore.restore(sess, tf.train.latest_checkpoint(checkpoints_dir))
+                    step = int(meta_graph_path.split("-")[2].split(".")[0])
+                else:
+                    sess.run(tf.global_variables_initializer())
+                    saver_res50.restore(sess, hyper_parameters.FLAGS.pretrained_keypoint_model)
+                    step = 0
+
+                coord = tf.train.Coordinator()
+                threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+                try:
+                    while not coord.should_stop() and step < 100000:
+
+                        images, img_ids, img_widths, img_heights = sess.run([x, image_ids,
+                                                                             image_heights, image_widths])
+                        heatmaps = labels_generator.get_detector_heatmap(img_ids, img_heights, img_widths, labels)
+                        _, _, keypoint_subnet_loss_val, summary = sess.run([reg_optimizer, confs_optimizer,
+                                                                            reg_loss, confs_loss,
+                                                                            summary_op],
+                                                                           feed_dict={retina.X: images,
+                                                                                      retina.Y_3: heatmaps[0],
+                                                                                      retina.Y_4: heatmaps[1],
+                                                                                      retina.Y_5: heatmaps[2],
+                                                                                      retina.Y_6: heatmaps[3],
+                                                                                      retina.Y_7: heatmaps[4]})
+                        train_writer.add_summary(summary, step)
+                        train_writer.flush()
+                        if (step + 1) % 100 == 0:
+                            logging.info('-----------Step %d:-------------' % (step + 1))
+                            logging.info('  keypoint_subnet_loss   : {}'.format(keypoint_subnet_loss_val))
+
+                        if step % 10000 == 0:
+                            save_path = saver.save(sess, checkpoints_dir + "/model.ckpt", global_step=step)
+                            logging.info("Model saved in file: %s" % save_path)
+
+                        step += 1
+
+                except KeyboardInterrupt:
+                    logging.info('Interrupted')
+                    coord.request_stop()
+
+                except Exception as e:
+                    coord.request_stop(e)
+
+                finally:
+                    save_path = saver.save(sess, checkpoints_dir + "/model.ckpt", global_step=step)
+                    logging.info("Model saved in file: %s" % save_path)
+                    # When done, ask the threads to stop.
+                    coord.request_stop()
+                    coord.join(threads)
 
 
 def main(unused_argv):
