@@ -3,7 +3,7 @@ import tensorflow as tf
 
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer('batch_size', 8, 'batch size, default: 1')
-tf.flags.DEFINE_integer('image_size', 224, 'image size, default: 256')
+tf.flags.DEFINE_integer('image_size', 256, 'image size, default: 256')
 tf.flags.DEFINE_integer('image_size_retina', 256, 'image size, default: 256')
 tf.flags.DEFINE_float('learning_rate', 1e-4,
                       'initial learning rate for Adam, default: 0.0001')

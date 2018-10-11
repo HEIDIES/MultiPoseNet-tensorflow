@@ -262,8 +262,8 @@ def train_retina_subnet():
 def main(unused_argv):
     if train_which == 'keypoint_subnet':
         train_keypoint_subnet()
-    # elif train_which == 'retina_subnet':
-        # train_
+    elif train_which == 'retina_subnet':
+        train_retina_subnet()
 
 
 if __name__ == '__main__':
